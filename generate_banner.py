@@ -26,6 +26,7 @@ from pathlib import Path
 
 GITHUB_USERNAME = "aundreka"   # ← change to your GitHub username
 
+
 FALLBACK_PROJECTS = [
     {
         "name": "Academon",
@@ -143,30 +144,30 @@ PET_FACES = {
     "happy":    [" /\\_/\\ ", "=( ^.^ )=", "  > ~ <  "],
     "sleepy":   [" /\\_/\\ ", "=( -.- )=", "  > z <  "],
     "excited":  [" /\\_/\\ ", "=( !! ) =", "  > ^ <  "],
-    "evil":     [" /\\_/\\ ", "=( >.< )=", "  > 😈<  "],
+    "evil":     [" /\\_/\\ ", "=( >.< )=", "  > * <  "],
     "focused":  [" /\\_/\\ ", "=( o.o )=", "  > ~ <  "],
     "confused": [" /\\_/\\ ", "=( ?_? )=", "  > . <  "],
 }
 
 PET_MESSAGES = {
-    "happy":    ["keep building!", "you got this!", "ship it!"],
-    "sleepy":   ["zzz... still building...", "one more commit...", "*yawns* deploy later"],
-    "excited":  ["LOOK AT THIS PROJECT!!", "WE'RE SHIPPING TODAY!!", "LFG!! 🔥"],
-    "evil":     ["you WILL click my repo 😈", "resistance is futile.", "fork me. NOW."],
+    "happy":    ["keep building.", "you got this.", "ship it."],
+    "sleepy":   ["zzz... still building...", "one more commit...", "deploy later."],
+    "excited":  ["look at this project.", "we are shipping today.", "let's go."],
+    "evil":     ["you will click my repo.", "resistance is futile.", "fork me. now."],
     "focused":  ["in the zone.", "deep work activated.", "no distractions."],
-    "confused": ["why does this work?", "git blame says... me.", "stackoverflow tab #47"],
+    "confused": ["why does this work?", "git blame says... me.", "stackoverflow tab 47."],
 }
 
-# 3 rotating terminal commands that appear ABOVE the guaranteed project line
+# 2 rotating terminal commands that appear ABOVE the guaranteed project line.
+# The third slot is always "currently working on" → most recently pushed project.
 ROTATING_COMMANDS = [
-    ("git status",        "nothing to commit (yet)"),
-    ("cat about.txt",     "developer · builder · dreamer"),
+    ("git status",           "nothing to commit (yet)"),
+    ("cat about.txt",        "developer · builder · dreamer"),
     ("git log --oneline -1", "feat: ship something great"),
-    ("./launch.sh",       "build successful ✓"),
-    ("whoami",            "aundreka"),
-    ("run deploy.sh",     "deploying..."),
-    ("git diff HEAD",     "3 files changed"),
-    ("npm run build",     "compiled successfully"),
+    ("whoami",               "aundreka"),
+    ("run deploy.sh",        "deploying..."),
+    ("git diff HEAD",        "3 files changed"),
+    ("npm run build",        "compiled successfully"),
 ]
 
 STATUSES  = ["coding", "debugging", "building", "deploying", "experimenting", "in grindset"]
@@ -174,9 +175,9 @@ DEV_MODES = ["grindset", "experimenting", "shipping", "debugging", "building", "
 
 RARITY_LABELS = {
     "common":   "",
-    "uncommon": " ✦",
-    "rare":     " 💎",
-    "hidden":   " 👀 rare drop",
+    "uncommon": " *",
+    "rare":     " [rare]",
+    "hidden":   " [hidden]",
 }
 
 LABEL_COLORS_DARK = {
@@ -300,6 +301,13 @@ def pick_commands(seed: int) -> list:
     return pool[:2]
 
 
+def get_current_project(projects: list) -> dict:
+    """Return the most recently pushed project — what you're actively working on."""
+    if not projects:
+        return FALLBACK_PROJECTS[0]
+    return sorted(projects, key=lambda p: p.get("pushed_at", ""), reverse=True)[0]
+
+
 # ─────────────────────────────────────────────
 #  SVG HELPERS
 # ─────────────────────────────────────────────
@@ -347,7 +355,7 @@ def label_tags(x, y, labels, dark_mode):
 # ─────────────────────────────────────────────
 
 def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
-               commands, visits, streak) -> str:
+               commands, visits, streak, current_project) -> str:
 
     if dark_mode:
         bg_out  = "#0d1117"; bg_card = "#161b22"; border = "#30363d"
@@ -386,8 +394,8 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
     L.append(hline(36, y, 400, border))
     y += 14
 
-    # 2 rotating commands
-    for cmd, output in commands:
+    # 1 rotating command
+    for cmd, output in commands[:1]:
         L.append(t(36, y, "$", muted))
         L.append(t(50, y, cmd, muted))
         y += 16
@@ -395,6 +403,29 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
         y += 18
         L.append(hline(36, y - 2, 400, border))
         y += 10
+
+    # ── CURRENTLY WORKING ON ─────────────────
+    cur_name   = current_project["name"]
+    cur_labels = current_project.get("labels", [])
+    cur_desc   = current_project.get("description", "")
+    cur_date   = current_project.get("pushed_at", "")[:10]
+
+    L.append(t(36, y, "$", muted))
+    L.append(t(50, y, "git log --all --author-date-order -1", muted))
+    y += 16
+    L.append(t(50, y, f"currently working on: {cur_name}", pri))
+
+    tag_x_cur = 50 + (len(f"currently working on: {cur_name}") * 7) + 6
+    if cur_labels:
+        L.append(label_tags(tag_x_cur, y, cur_labels, dark_mode))
+
+    y += 14
+    if cur_desc:
+        L.append(t(50, y, cur_desc[:52], muted, size=11))
+        y += 12
+
+    L.append(hline(36, y - 2, 400, border))
+    y += 10
 
     # ── GUARANTEED PROJECT RECOMMENDATION ────
     L.append(t(36, y, "$", muted))
@@ -487,9 +518,9 @@ DEFS = """<defs>
 
 
 def generate_svg(dark_mode: bool, project, mood, time_ctx, status,
-                 dev_mode, commands, visits, streak, label: str) -> str:
+                 dev_mode, commands, visits, streak, current_project, label: str) -> str:
     body = build_card(dark_mode, project, mood, time_ctx, status,
-                      dev_mode, commands, visits, streak)
+                      dev_mode, commands, visits, streak, current_project)
     return "\n".join([
         '<svg width="680" height="300" viewBox="0 0 680 300" '
         'role="img" xmlns="http://www.w3.org/2000/svg">',
@@ -541,8 +572,10 @@ def main():
         projects = FALLBACK_PROJECTS
         visits   = args.visits or "—"
 
-    project = pick_project(projects, args.mode, seed)
+    project         = pick_project(projects, args.mode, seed)
+    current_project = get_current_project(projects)
     print(f"  [project] {project['name']} ({args.mode})")
+    print(f"  [working] {current_project['name']} (most recent push: {current_project.get('pushed_at','?')[:10]})")
     print(f"  [status]  {status} · mode={dev_mode}")
 
     themes = []
@@ -554,6 +587,7 @@ def main():
             dark_mode=dark_mode, project=project, mood=mood,
             time_ctx=time_ctx, status=status, dev_mode=dev_mode,
             commands=commands, visits=visits, streak=args.streak,
+            current_project=current_project,
             label=now.strftime("%b %d"),
         )
         Path(filename).write_text(svg, encoding="utf-8")
