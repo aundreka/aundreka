@@ -801,9 +801,10 @@ def build_cursor_animation(
 
     key_times_text = ";".join(f"{value:.6f}" for value in key_times)
     values_text = ";".join(values)
+    fill = ' fill="freeze"' if repeat_count == "1" else ""
     return (
         f'<animate attributeName="opacity" values="{values_text}" '
-        f'keyTimes="{key_times_text}" dur="{cycle_seconds}s" repeatCount="{repeat_count}"/>'
+        f'keyTimes="{key_times_text}" dur="{cycle_seconds}s" repeatCount="{repeat_count}"{fill}/>'
     )
 
 
@@ -836,6 +837,7 @@ def animate_svg_lines(body_lines: list[str], repeat_count: str = "indefinite") -
     total_chars = max(total_chars, 1)
     step_seconds = TYPING_DURATION_SECONDS / total_chars
     cycle_seconds = TYPING_DURATION_SECONDS + TYPING_PAUSE_SECONDS
+    fill = ' fill="freeze"' if repeat_count == "1" else ""
     char_index = 0
     animated_lines = []
     pending_rects = []
@@ -881,7 +883,7 @@ def animate_svg_lines(body_lines: list[str], repeat_count: str = "indefinite") -
                 f'{rect_indent}<rect{rect_markup} opacity="0">'
                 f'<animate attributeName="opacity" values="0;0;{final_opacity};{final_opacity}" '
                 f'keyTimes="0;{line_start_frac:.6f};{line_start_frac:.6f};1" '
-                f'dur="{cycle_seconds}s" repeatCount="{repeat_count}"/></rect>'
+                f'dur="{cycle_seconds}s" repeatCount="{repeat_count}"{fill}/></rect>'
             )
 
         parts = [f'{indent}<text{attrs}>']
@@ -896,7 +898,7 @@ def animate_svg_lines(body_lines: list[str], repeat_count: str = "indefinite") -
                 f'<tspan opacity="0">{rendered_token}'
                 f'<animate attributeName="opacity" values="0;0;1;1" '
                 f'keyTimes="0;{frac:.6f};{frac:.6f};1" '
-                f'dur="{cycle_seconds}s" repeatCount="{repeat_count}"/></tspan>'
+                f'dur="{cycle_seconds}s" repeatCount="{repeat_count}"{fill}/></tspan>'
             )
             char_index += 1
         parts.append("</text>")
@@ -1088,7 +1090,7 @@ def generate_svg(
     streak,
     current_project,
     label: str,
-    animate_mode: str = "loop",
+    animate_mode: str = "once",
 ) -> str:
     body = build_card(dark_mode, project, mood, time_ctx, status,
                       dev_mode, commands, visits, streak, current_project)
@@ -1125,14 +1127,15 @@ def resolve_banner_context(
     now: datetime.datetime | None = None,
 ) -> dict:
     now = now or datetime.datetime.now(DISPLAY_TIMEZONE)
-    seed = int(now.strftime("%Y%m%d"))
+    local_now = now.astimezone(DISPLAY_TIMEZONE) if now.tzinfo else now.replace(tzinfo=DISPLAY_TIMEZONE)
+    seed = int(local_now.strftime("%Y%m%d"))
 
-    time_ctx = get_time_context(now)
+    time_ctx = get_time_context(local_now)
     mood = pick_mood(time_ctx, seed)
     status = random.Random(seed + 1).choice(STATUSES)
     dev_mode = random.Random(seed + 2).choice(DEV_MODES)
     commands = pick_commands(seed)
-    streak = streak_override if streak_override is not None else fetch_real_activity_streak(now)
+    streak = streak_override if streak_override is not None else fetch_real_activity_streak(local_now)
     visits = visits_override or fetch_github_visits(GITHUB_USERNAME)
 
     if github:
@@ -1153,7 +1156,7 @@ def resolve_banner_context(
         "current_project": current_project,
         "dev_mode": dev_mode,
         "mood": mood,
-        "now": now,
+        "now": local_now,
         "project": project,
         "projects": projects,
         "status": status,
@@ -1170,7 +1173,7 @@ def render_banner(
     streak_override: int | None = None,
     visits_override: str | None = None,
     now: datetime.datetime | None = None,
-    animate_mode: str = "loop",
+    animate_mode: str = "once",
 ) -> str:
     dark_mode = theme == "dark"
     context = resolve_banner_context(
