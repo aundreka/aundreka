@@ -27,6 +27,9 @@ SVG_WIDTH = 680
 SVG_HEIGHT = 340
 TYPING_DURATION_SECONDS = 8
 TYPING_PAUSE_SECONDS = 30
+DEFAULT_DESCRIPTION_LINES = 2
+RECOMMENDATION_DESCRIPTION_LINES = 4
+RECOMMENDATION_DESCRIPTION_FETCH_LIMIT = 110
 
 
 FALLBACK_PROJECTS = [
@@ -253,7 +256,7 @@ def fetch_github_projects(username: str) -> list:
                 "name":        r["name"],
                 "labels":      labels,
                 "stars":       r.get("stargazers_count", 0),
-                "description": (r.get("description") or "")[:55],
+                "description": (r.get("description") or "")[:RECOMMENDATION_DESCRIPTION_FETCH_LIMIT],
                 "url":         r.get("html_url", ""),
                 "weight":      max(1, r.get("stargazers_count", 0)),
                 "rarity":      "common",
@@ -434,7 +437,7 @@ def label_tags(x, y, labels, dark_mode):
     return "\n".join(parts)
 
 
-def wrap_text(text: str, max_chars: int, max_lines: int = 2) -> list[str]:
+def wrap_text(text: str, max_chars: int, max_lines: int = DEFAULT_DESCRIPTION_LINES) -> list[str]:
     words = text.split()
     if not words:
         return []
@@ -681,7 +684,11 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
     last_recommendation_line = f"{name}"
     last_recommendation_y = y
     if desc:
-        wrapped_desc = wrap_text(desc, max_chars=46)
+        wrapped_desc = wrap_text(
+            desc,
+            max_chars=46,
+            max_lines=RECOMMENDATION_DESCRIPTION_LINES,
+        )
         for line in wrapped_desc:
             L.append(t(50, y, line, muted, size=11))
             last_recommendation_line = line
