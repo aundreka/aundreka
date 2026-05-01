@@ -1,8 +1,4 @@
-<div align="right">
-  <a href="https://github.com/aundreka" target="_blank">
-    <img src="https://visitor-badge.laobi.icu/badge?page_id=aundreka.aundreka&left_color=gray&right_color=blue&left_text=Profile%20visitors" alt="Profile visitors">
-  </a>
-</div>
+
 
 <p align="center">
   <picture>
