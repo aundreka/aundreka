@@ -772,7 +772,12 @@ def render_svg_token(token: str) -> str:
     return token
 
 
-def build_cursor_animation(start_seconds: float, cycle_seconds: float, blink_period: float = 1.1) -> str:
+def build_cursor_animation(
+    start_seconds: float,
+    cycle_seconds: float,
+    blink_period: float = 1.1,
+    repeat_count: str = "indefinite",
+) -> str:
     key_times = [0.0]
     values = ["0"]
 
@@ -798,11 +803,11 @@ def build_cursor_animation(start_seconds: float, cycle_seconds: float, blink_per
     values_text = ";".join(values)
     return (
         f'<animate attributeName="opacity" values="{values_text}" '
-        f'keyTimes="{key_times_text}" dur="{cycle_seconds}s" repeatCount="indefinite"/>'
+        f'keyTimes="{key_times_text}" dur="{cycle_seconds}s" repeatCount="{repeat_count}"/>'
     )
 
 
-def animate_svg_lines(body_lines: list[str]) -> str:
+def animate_svg_lines(body_lines: list[str], repeat_count: str = "indefinite") -> str:
     pattern = re.compile(r"^(?P<indent>\s*)<text(?P<attrs>[^>]*)>(?P<content>.*?)</text>$")
     rect_pattern = re.compile(
         r'^(?P<indent>\s*)<rect(?P<attrs>[^>]*)data-typing-bg="1"(?P<tail>[^>]*)data-final-opacity="(?P<final>[^"]+)"(?P<end>[^>]*)/>$'
@@ -848,7 +853,7 @@ def animate_svg_lines(body_lines: list[str]) -> str:
                 indent = cursor_match.group("indent")
                 attrs = cursor_match.group("attrs")
                 animated_lines.append(
-                    f'{indent}<rect{attrs} opacity="0">{build_cursor_animation(TYPING_DURATION_SECONDS, cycle_seconds)}</rect>'
+                    f'{indent}<rect{attrs} opacity="0">{build_cursor_animation(TYPING_DURATION_SECONDS, cycle_seconds, repeat_count=repeat_count)}</rect>'
                 )
                 continue
 
@@ -876,7 +881,7 @@ def animate_svg_lines(body_lines: list[str]) -> str:
                 f'{rect_indent}<rect{rect_markup} opacity="0">'
                 f'<animate attributeName="opacity" values="0;0;{final_opacity};{final_opacity}" '
                 f'keyTimes="0;{line_start_frac:.6f};{line_start_frac:.6f};1" '
-                f'dur="{cycle_seconds}s" repeatCount="indefinite"/></rect>'
+                f'dur="{cycle_seconds}s" repeatCount="{repeat_count}"/></rect>'
             )
 
         parts = [f'{indent}<text{attrs}>']
@@ -891,7 +896,7 @@ def animate_svg_lines(body_lines: list[str]) -> str:
                 f'<tspan opacity="0">{rendered_token}'
                 f'<animate attributeName="opacity" values="0;0;1;1" '
                 f'keyTimes="0;{frac:.6f};{frac:.6f};1" '
-                f'dur="{cycle_seconds}s" repeatCount="indefinite"/></tspan>'
+                f'dur="{cycle_seconds}s" repeatCount="{repeat_count}"/></tspan>'
             )
             char_index += 1
         parts.append("</text>")
@@ -1071,8 +1076,20 @@ DEFS = f"""<defs>
 </defs>"""
 
 
-def generate_svg(dark_mode: bool, project, mood, time_ctx, status,
-                 dev_mode, commands, visits, streak, current_project, label: str) -> str:
+def generate_svg(
+    dark_mode: bool,
+    project,
+    mood,
+    time_ctx,
+    status,
+    dev_mode,
+    commands,
+    visits,
+    streak,
+    current_project,
+    label: str,
+    animate_mode: str = "loop",
+) -> str:
     body = build_card(dark_mode, project, mood, time_ctx, status,
                       dev_mode, commands, visits, streak, current_project)
     body_lines = body.splitlines()
@@ -1084,7 +1101,11 @@ def generate_svg(dark_mode: bool, project, mood, time_ctx, status,
             animated_candidates.append(line)
         else:
             static_lines.append(line)
-    animated_text = animate_svg_lines(animated_candidates)
+    if animate_mode == "off":
+        animated_text = "\n".join(animated_candidates)
+    else:
+        repeat_count = "1" if animate_mode == "once" else "indefinite"
+        animated_text = animate_svg_lines(animated_candidates, repeat_count=repeat_count)
     return "\n".join([
         f'<svg width="{SVG_WIDTH}" height="{SVG_HEIGHT}" viewBox="0 0 {SVG_WIDTH} {SVG_HEIGHT}" '
         'role="img" xmlns="http://www.w3.org/2000/svg">',
@@ -1149,6 +1170,7 @@ def render_banner(
     streak_override: int | None = None,
     visits_override: str | None = None,
     now: datetime.datetime | None = None,
+    animate_mode: str = "loop",
 ) -> str:
     dark_mode = theme == "dark"
     context = resolve_banner_context(
@@ -1170,6 +1192,7 @@ def render_banner(
         streak=context["streak"],
         current_project=context["current_project"],
         label=context["now"].strftime("%b %d"),
+        animate_mode=animate_mode,
     )
 
 

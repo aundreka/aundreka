@@ -27,6 +27,7 @@ class handler(BaseHTTPRequestHandler):
         query = parse_qs(urlsplit(self.path).query)
         theme = first_value(query.get("theme", []), "dark").lower()
         mode = first_value(query.get("mode", []), "weighted").lower()
+        animate = first_value(query.get("animate", []), "off").lower()
         github = parse_bool(query.get("github", []), True)
         visits = first_value(query.get("visits", []), "").strip() or None
 
@@ -38,12 +39,17 @@ class handler(BaseHTTPRequestHandler):
             self.send_error(400, "Invalid mode.")
             return
 
+        if animate not in {"off", "once", "loop"}:
+            self.send_error(400, "Invalid animate mode. Use off, once, or loop.")
+            return
+
         try:
             svg = render_banner(
                 theme=theme,
                 mode=mode,
                 github=github,
                 visits_override=visits,
+                animate_mode=animate,
             )
         except Exception as exc:
             self.send_response(500)
@@ -54,6 +60,6 @@ class handler(BaseHTTPRequestHandler):
 
         self.send_response(200)
         self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
-        self.send_header("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600")
+        self.send_header("Cache-Control", "no-cache, max-age=0, must-revalidate")
         self.end_headers()
         self.wfile.write(svg.encode("utf-8"))
