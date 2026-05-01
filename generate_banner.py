@@ -10,6 +10,7 @@
 import random
 import datetime
 import argparse
+import colorsys
 import json
 import re
 import subprocess
@@ -23,6 +24,7 @@ from pathlib import Path
 # ─────────────────────────────────────────────
 
 GITHUB_USERNAME = "aundreka"  
+DISPLAY_TIMEZONE = datetime.timezone(datetime.timedelta(hours=8), name="Asia/Manila")
 SVG_WIDTH = 680
 SVG_HEIGHT = 340
 TYPING_DURATION_SECONDS = 8
@@ -30,6 +32,42 @@ TYPING_PAUSE_SECONDS = 30
 DEFAULT_DESCRIPTION_LINES = 2
 RECOMMENDATION_DESCRIPTION_LINES = 4
 RECOMMENDATION_DESCRIPTION_FETCH_LIMIT = 110
+TOPIC_LABELS = {
+    "game": "GAME",
+    "games": "GAME",
+    "ai": "AI",
+    "ml": "AI",
+    "web": "WEB",
+    "website": "WEB",
+    "mobile": "MOBILE",
+    "android": "MOBILE",
+    "app": "APP",
+    "apps": "APP",
+    "application": "APP",
+    "edtech": "EDTECH",
+    "education": "EDTECH",
+    "fintech": "FINTECH",
+    "finance": "FINTECH",
+    "trading": "FINTECH",
+    "marketing": "MARKETING",
+    "python": "PYTHON",
+    "horror": "HORROR",
+    "vn": "VN",
+    "visual-novel": "VN",
+}
+LABEL_INFERENCE_RULES = [
+    ("GAME", ["game", "games", "rpg", "tower defense", "survival", "combat", "visual novel"]),
+    ("AI", ["ai", "ml", "llm", "model", "models", "prediction", "predictive", "sentiment", "recommendation"]),
+    ("WEB", ["web", "website", "dashboard", "site", "browser"]),
+    ("MOBILE", ["mobile", "android", "ios", "flutter", "expo", "react native"]),
+    ("APP", ["app", "application", "platform", "system", "tool"]),
+    ("EDTECH", ["edtech", "education", "learning", "learn", "study", "quiz", "lesson", "academic", "school"]),
+    ("FINTECH", ["fintech", "finance", "trading", "bitcoin", "crypto", "analytics", "backtesting"]),
+    ("MARKETING", ["marketing", "creator", "creators", "sme", "smes", "content", "campaign"]),
+    ("PYTHON", ["python"]),
+    ("HORROR", ["horror", "curse", "survival horror"]),
+    ("VN", ["visual novel", "vn", "branching story"]),
+]
 
 
 FALLBACK_PROJECTS = [
@@ -180,12 +218,26 @@ LABEL_COLORS_DARK = {
     "AI":     ("#854F0B", "#ffa657"),
     "WEB":    ("#0C447C", "#58a6ff"),
     "MOBILE": ("#3C3489", "#a855f7"),
+    "APP":    ("#6B4F2A", "#f6d365"),
+    "EDTECH": ("#0F766E", "#99f6e4"),
+    "FINTECH": ("#14532D", "#86efac"),
+    "MARKETING": ("#831843", "#f9a8d4"),
+    "PYTHON": ("#1E3A8A", "#93c5fd"),
+    "HORROR": ("#4C1D95", "#c4b5fd"),
+    "VN": ("#9D174D", "#fbcfe8"),
 }
 LABEL_COLORS_LIGHT = {
     "GAME":   ("#dcfce7", "#3B6D11"),
     "AI":     ("#fef3c7", "#854F0B"),
     "WEB":    ("#dbeafe", "#185FA5"),
     "MOBILE": ("#ede9fe", "#534AB7"),
+    "APP":    ("#fef3c7", "#92400e"),
+    "EDTECH": ("#ccfbf1", "#0f766e"),
+    "FINTECH": ("#dcfce7", "#166534"),
+    "MARKETING": ("#fce7f3", "#9d174d"),
+    "PYTHON": ("#dbeafe", "#1d4ed8"),
+    "HORROR": ("#ede9fe", "#6d28d9"),
+    "VN": ("#fce7f3", "#be185d"),
 }
 DEFAULT_DARK  = ("#444441", "#B4B2A9")
 DEFAULT_LIGHT = ("#F1EFE8", "#5F5E5A")
@@ -204,7 +256,7 @@ def get_time_context(now: datetime.datetime) -> dict:
         period, greeting = "night",     "late night grind detected."
     elif hour < 12:
         period, greeting = "morning",   "good morning, dev."
-    elif hour < 17:
+    elif hour < 18:
         period, greeting = "afternoon", "good afternoon, dev."
     elif hour < 21:
         period, greeting = "evening",   "good evening, dev."
@@ -239,19 +291,23 @@ def pick_mood(time_ctx: dict, seed: int) -> str:
 def fetch_github_projects(username: str) -> list:
     url = f"https://api.github.com/users/{username}/repos?per_page=100&sort=pushed"
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "aundreka-banner"})
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "aundreka-banner",
+                "Accept": "application/vnd.github+json",
+            },
+        )
         with urllib.request.urlopen(req, timeout=5) as resp:
             repos = json.loads(resp.read())
         projects = []
         for r in repos:
             if r.get("fork"):
                 continue
-            topics = r.get("topics", [])
-            labels = []
-            if any(t in topics for t in ["game", "games"]):   labels.append("GAME")
-            if any(t in topics for t in ["ai", "ml"]):        labels.append("AI")
-            if any(t in topics for t in ["web", "website"]):  labels.append("WEB")
-            if any(t in topics for t in ["mobile","android"]): labels.append("MOBILE")
+            topics = [str(topic).lower() for topic in r.get("topics", [])]
+            if not topics:
+                topics = fetch_github_topics(username, r["name"])
+            labels = normalize_topics(topics)
             projects.append({
                 "name":        r["name"],
                 "labels":      labels,
@@ -269,6 +325,63 @@ def fetch_github_projects(username: str) -> list:
     except Exception as e:
         print(f"  [github] fetch failed: {e} — using fallback projects")
         return FALLBACK_PROJECTS
+
+
+def fetch_github_topics(username: str, repo_name: str) -> list[str]:
+    url = f"https://api.github.com/repos/{username}/{repo_name}/topics"
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "aundreka-banner",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            payload = json.loads(resp.read())
+        return [str(topic).lower() for topic in payload.get("names", [])]
+    except Exception:
+        return []
+
+
+def normalize_topics(topics: list[str], max_labels: int = 3) -> list[str]:
+    labels = []
+    for topic in topics:
+        cleaned = str(topic).strip().upper()
+        if not cleaned or cleaned in labels:
+            continue
+        labels.append(cleaned)
+        if len(labels) >= max_labels:
+            break
+    return labels
+
+
+def topic_labels(
+    topics: list[str],
+    max_labels: int = 3,
+    name: str = "",
+    description: str = "",
+    language: str = "",
+) -> list[str]:
+    labels = []
+    for topic in topics:
+        label = TOPIC_LABELS.get(topic)
+        if not label or label in labels:
+            continue
+        labels.append(label)
+        if len(labels) >= max_labels:
+            break
+
+    haystack = " ".join([name, description, language]).lower()
+    for label, keywords in LABEL_INFERENCE_RULES:
+        if label in labels:
+            continue
+        if any(keyword in haystack for keyword in keywords):
+            labels.append(label)
+        if len(labels) >= max_labels:
+            break
+
+    return labels
 
 
 def fetch_github_visits(username: str) -> str:
@@ -429,14 +542,43 @@ def dot(cx, cy, r, fill, op=1.0):
     o = f' opacity="{op}"' if op != 1.0 else ""
     return f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{fill}"{o}/>'
 
+def topic_pastel_colors(label: str, dark_mode: bool) -> tuple[str, str]:
+    seed = sum((index + 1) * ord(ch) for index, ch in enumerate(label))
+    hue = (seed % 360) / 360.0
+    if dark_mode:
+        bg_rgb = colorsys.hls_to_rgb(hue, 0.26, 0.55)
+        fg_rgb = colorsys.hls_to_rgb(hue, 0.78, 0.75)
+    else:
+        bg_rgb = colorsys.hls_to_rgb(hue, 0.88, 0.65)
+        fg_rgb = colorsys.hls_to_rgb(hue, 0.34, 0.65)
+
+    def to_hex(rgb: tuple[float, float, float]) -> str:
+        return "#" + "".join(f"{round(channel * 255):02x}" for channel in rgb)
+
+    return to_hex(bg_rgb), to_hex(fg_rgb)
+
+
+def label_width(label: str) -> int:
+    return len(label) * 7 + 12
+
+
+def fit_labels(labels: list[str], start_x: int, max_x: int, gap: int = 5) -> list[str]:
+    fitted = list(labels)
+    while fitted:
+        total_width = sum(label_width(label) for label in fitted) + gap * (len(fitted) - 1)
+        if start_x + total_width <= max_x:
+            return fitted
+        longest = max(fitted, key=lambda label: (len(label), label))
+        fitted.remove(longest)
+    return fitted
+
+
 def label_tags(x, y, labels, dark_mode):
-    colors = LABEL_COLORS_DARK if dark_mode else LABEL_COLORS_LIGHT
-    default = DEFAULT_DARK if dark_mode else DEFAULT_LIGHT
     parts = []
     cx = x
     for lbl in labels:
-        bg, fg = colors.get(lbl, default)
-        w = len(lbl) * 7 + 12
+        bg, fg = topic_pastel_colors(lbl, dark_mode)
+        w = label_width(lbl)
         op = 0.3 if dark_mode else 0.9
         parts.append(
             f'<rect x="{cx}" y="{y - 8}" width="{w}" height="17" rx="3" fill="{bg}" '
@@ -483,6 +625,12 @@ def truncate_text(text: str, max_chars: int) -> str:
 
 def tokenize_svg_text(text: str) -> list[str]:
     return re.findall(r"&[^;]+;|.", text, flags=re.DOTALL)
+
+
+def render_svg_token(token: str) -> str:
+    if token == " ":
+        return "&#160;"
+    return token
 
 
 def build_cursor_animation(start_seconds: float, cycle_seconds: float, blink_period: float = 1.1) -> str:
@@ -597,10 +745,11 @@ def animate_svg_lines(body_lines: list[str]) -> str:
             if not unescape(token):
                 parts.append(token)
                 continue
+            rendered_token = render_svg_token(token)
             start = char_index * step_seconds
             frac = start / cycle_seconds
             parts.append(
-                f'<tspan opacity="0">{token}'
+                f'<tspan opacity="0">{rendered_token}'
                 f'<animate attributeName="opacity" values="0;0;1;1" '
                 f'keyTimes="0;{frac:.6f};{frac:.6f};1" '
                 f'dur="{cycle_seconds}s" repeatCount="indefinite"/></tspan>'
@@ -668,7 +817,7 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
 
     # ── CURRENTLY WORKING ON ─────────────────
     cur_name   = current_project["name"]
-    cur_labels = current_project.get("labels", [])
+    cur_labels = fit_labels(current_project.get("labels", []), start_x=248, max_x=400)
     cur_desc   = current_project.get("description", "")
     L.append(t(36, y, "$", muted))
     L.append(t(50, y, "currently working on:", muted))
@@ -687,11 +836,11 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
 
     # ── GUARANTEED PROJECT RECOMMENDATION ────
     L.append(t(36, y, "$", muted))
-    L.append(t(50, y, "today's recommendation:", muted))
+    L.append(t(50, y, "daily repo reco:", muted))
 
     name    = project["name"]
     desc    = project.get("description", "")
-    labels  = project.get("labels", [])
+    labels  = fit_labels(project.get("labels", []), start_x=248, max_x=400)
 
     if labels:
         L.append(label_tags(248, y, labels, dark_mode))
@@ -827,7 +976,7 @@ def main():
                    help="Profile visit count to display (overrides GitHub fetch)")
     args = p.parse_args()
 
-    now  = datetime.datetime.now()
+    now  = datetime.datetime.now(DISPLAY_TIMEZONE)
     seed = int(now.strftime("%Y%m%d"))
 
     time_ctx = get_time_context(now)
