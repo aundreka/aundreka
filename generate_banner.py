@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 """
-generate_banner.py — Aundreka OS Profile Banner Generator
-
-Usage:
   python3 generate_banner.py                        # generates banner-dark.svg + banner-light.svg
   python3 generate_banner.py --theme dark           # dark only  → banner-dark.svg
   python3 generate_banner.py --theme light          # light only → banner-light.svg
   python3 generate_banner.py --mode random          # random project pick
   python3 generate_banner.py --mode chronological   # latest pushed repo first
-  python3 generate_banner.py --github --streak 7    # fetch real GitHub data
-  python3 generate_banner.py --visits 1234          # set profile visit count manually
 """
 
 import random
 import datetime
 import argparse
 import json
+import re
+import subprocess
 import urllib.request
+from html import unescape
 from pathlib import Path
 
 
@@ -24,7 +22,11 @@ from pathlib import Path
 #  CONFIG
 # ─────────────────────────────────────────────
 
-GITHUB_USERNAME = "aundreka"   # ← change to your GitHub username
+GITHUB_USERNAME = "aundreka"  
+SVG_WIDTH = 680
+SVG_HEIGHT = 340
+TYPING_DURATION_SECONDS = 8
+TYPING_PAUSE_SECONDS = 30
 
 
 FALLBACK_PROJECTS = [
@@ -150,21 +152,18 @@ PET_FACES = {
 }
 
 PET_MESSAGES = {
-    "happy":    ["keep building.", "you got this.", "ship it."],
-    "sleepy":   ["zzz... still building...", "one more commit...", "deploy later."],
-    "excited":  ["look at this project.", "we are shipping today.", "let's go."],
-    "evil":     ["you will click my repo.", "resistance is futile.", "fork me. now."],
-    "focused":  ["in the zone.", "deep work activated.", "no distractions."],
-    "confused": ["why does this work?", "git blame says... me.", "stackoverflow tab 47."],
+    "happy":    [""],
+    "sleepy":   ["zzz...",],
+    "excited":  [""],
+    "evil":     [""],
+    "focused":  ["locked in rn."],
+    "confused": ["git blame says... me."],
 }
 
 # 2 rotating terminal commands that appear ABOVE the guaranteed project line.
 # The third slot is always "currently working on" → most recently pushed project.
 ROTATING_COMMANDS = [
-    ("git status",           "nothing to commit (yet)"),
-    ("cat about.txt",        "developer · builder · dreamer"),
-    ("git log --oneline -1", "feat: ship something great"),
-    ("whoami",               "aundreka"),
+    ("reach me at",           "c.aundrekaperez@gmail.com"),
     ("run deploy.sh",        "deploying..."),
     ("git diff HEAD",        "3 files changed"),
     ("npm run build",        "compiled successfully"),
@@ -172,13 +171,6 @@ ROTATING_COMMANDS = [
 
 STATUSES  = ["coding", "debugging", "building", "deploying", "experimenting", "in grindset"]
 DEV_MODES = ["grindset", "experimenting", "shipping", "debugging", "building", "vibing"]
-
-RARITY_LABELS = {
-    "common":   "",
-    "uncommon": " *",
-    "rare":     " [rare]",
-    "hidden":   " [hidden]",
-}
 
 LABEL_COLORS_DARK = {
     "GAME":   ("#3B6D11", "#7ee787"),
@@ -275,22 +267,111 @@ def fetch_github_projects(username: str) -> list:
 
 def fetch_github_visits(username: str) -> str:
     """
-    GitHub doesn't expose profile view counts via the public API.
-    Real implementations use a self-hosted counter (e.g. https://komarev.com/ghpvc/).
-    We return a placeholder so the layout renders — replace with your real count.
+    Read the profile view count from a public badge counter.
+    If the fetch fails, fall back to the last rendered banner count.
     """
-    return "—"
+    url = (
+        "https://komarev.com/ghpvc/"
+        f"?username={username}&label=PROFILE+VIEWS&color=0e75b6&style=flat-square"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "aundreka-banner"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            svg = resp.read().decode("utf-8", errors="replace")
+        visit_count = parse_visit_count(svg)
+        if visit_count:
+            return visit_count
+    except Exception as e:
+        print(f"  [visits]  fetch failed: {e} — trying cached banner value")
+
+    cached = read_cached_visit_count()
+    return cached or "—"
 
 
-def pick_project(projects: list, mode: str, seed: int) -> dict:
+def parse_visit_count(svg_text: str) -> str | None:
+    text_matches = re.findall(r">([^<]+)<", svg_text)
+    for text in text_matches:
+        if "views" not in text.lower():
+            continue
+        match = re.search(r"([0-9][0-9,]*)", text)
+        if match:
+            return match.group(1)
+    return None
+
+
+def read_cached_visit_count() -> str | None:
+    pattern = re.compile(r"profile visits:\s*([0-9][0-9,]*)", re.IGNORECASE)
+    for filename in ("banner-dark.svg", "banner-light.svg"):
+        path = Path(filename)
+        if not path.exists():
+            continue
+        match = pattern.search(path.read_text(encoding="utf-8", errors="ignore"))
+        if match:
+            return match.group(1)
+    return None
+
+
+def fetch_git_streak(now: datetime.datetime) -> int:
+    """
+    Compute the current commit streak from local git history.
+    A streak is considered active if the latest commit was today or yesterday.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "log", "--date=short", "--pretty=format:%ad"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as e:
+        print(f"  [streak]  git history unavailable: {e} — using fallback")
+        return 1
+
+    unique_dates = []
+    seen = set()
+    for line in result.stdout.splitlines():
+        date_str = line.strip()
+        if not date_str or date_str in seen:
+            continue
+        seen.add(date_str)
+        try:
+            unique_dates.append(datetime.date.fromisoformat(date_str))
+        except ValueError:
+            continue
+
+    if not unique_dates:
+        return 1
+
+    today = now.date()
+    latest = unique_dates[0]
+    if latest < today - datetime.timedelta(days=1):
+        return 0
+
+    streak = 1
+    previous = latest
+    for current in unique_dates[1:]:
+        if previous - current == datetime.timedelta(days=1):
+            streak += 1
+            previous = current
+            continue
+        break
+    return streak
+
+
+def pick_project(projects: list, mode: str, seed: int, exclude_name: str | None = None) -> dict:
     if not projects:
         return FALLBACK_PROJECTS[0]
+
+    candidates = [p for p in projects if p.get("name") != exclude_name]
+    if not candidates:
+        candidates = projects
+
     if mode == "chronological":
-        return sorted(projects, key=lambda p: p.get("pushed_at", ""), reverse=True)[0]
+        return sorted(candidates, key=lambda p: p.get("pushed_at", ""), reverse=True)[0]
     if mode == "weighted":
         rng = random.Random(seed)
-        return rng.choices(projects, weights=[max(1, p.get("weight", 1)) for p in projects], k=1)[0]
-    return random.Random(seed).choice(projects)
+        return rng.choices(candidates, weights=[max(1, p.get("weight", 1)) for p in candidates], k=1)[0]
+    return random.Random(seed).choice(candidates)
 
 
 def pick_commands(seed: int) -> list:
@@ -317,7 +398,7 @@ def esc(s: str) -> str:
 
 def t(x, y, text, fill, size=12, anchor="start", weight="normal"):
     return (f'<text font-family="monospace" font-size="{size}" font-weight="{weight}" '
-            f'x="{x}" y="{y}" text-anchor="{anchor}" fill="{fill}">{esc(text)}</text>')
+            f'x="{x}" y="{y}" text-anchor="{anchor}" fill="{fill}" xml:space="preserve">{esc(text)}</text>')
 
 def hline(x1, y, x2, stroke, sw=0.5):
     return f'<line x1="{x1}" y1="{y}" x2="{x2}" y2="{y}" stroke="{stroke}" stroke-width="{sw}"/>'
@@ -343,11 +424,172 @@ def label_tags(x, y, labels, dark_mode):
         bg, fg = colors.get(lbl, default)
         w = len(lbl) * 7 + 12
         op = 0.3 if dark_mode else 0.9
-        parts.append(box(cx, y - 13, w, 17, 3, bg, op=op))
+        parts.append(
+            f'<rect x="{cx}" y="{y - 8}" width="{w}" height="17" rx="3" fill="{bg}" '
+            f'opacity="0" data-typing-bg="1" data-final-opacity="{op}"/>'
+        )
         parts.append(f'<text x="{cx + w//2}" y="{y}" text-anchor="middle" '
-                     f'font-family="monospace" font-size="11" fill="{fg}">{esc(lbl)}</text>')
+                     f'font-family="monospace" font-size="11" fill="{fg}" dominant-baseline="middle">{esc(lbl)}</text>')
         cx += w + 5
     return "\n".join(parts)
+
+
+def wrap_text(text: str, max_chars: int, max_lines: int = 2) -> list[str]:
+    words = text.split()
+    if not words:
+        return []
+
+    lines = []
+    current = words[0]
+    for word in words[1:]:
+        trial = f"{current} {word}"
+        if len(trial) <= max_chars:
+            current = trial
+            continue
+        lines.append(current)
+        current = word
+        if len(lines) == max_lines - 1:
+            break
+
+    remaining_words = words[len(" ".join(lines + [current]).split()):]
+    if remaining_words:
+        current = f"{current} {' '.join(remaining_words)}".strip()
+
+    if len(current) > max_chars:
+        current = current[: max_chars - 3].rstrip() + "..."
+    lines.append(current)
+    return lines[:max_lines]
+
+
+def tokenize_svg_text(text: str) -> list[str]:
+    return re.findall(r"&[^;]+;|.", text, flags=re.DOTALL)
+
+
+def build_cursor_animation(start_seconds: float, cycle_seconds: float, blink_period: float = 1.1) -> str:
+    key_times = [0.0]
+    values = ["0"]
+
+    start_seconds = min(max(start_seconds, 0.0), cycle_seconds)
+    start_frac = start_seconds / cycle_seconds if cycle_seconds else 0.0
+    key_times.append(start_frac)
+    values.append("0")
+
+    current = start_seconds
+    visible = True
+    while current < cycle_seconds:
+        frac = min(current / cycle_seconds, 1.0)
+        key_times.append(frac)
+        values.append("0.7" if visible else "0")
+        current += blink_period / 2
+        visible = not visible
+
+    if key_times[-1] != 1.0:
+        key_times.append(1.0)
+        values.append(values[-1])
+
+    key_times_text = ";".join(f"{value:.6f}" for value in key_times)
+    values_text = ";".join(values)
+    return (
+        f'<animate attributeName="opacity" values="{values_text}" '
+        f'keyTimes="{key_times_text}" dur="{cycle_seconds}s" repeatCount="indefinite"/>'
+    )
+
+
+def animate_svg_lines(body_lines: list[str]) -> str:
+    pattern = re.compile(r"^(?P<indent>\s*)<text(?P<attrs>[^>]*)>(?P<content>.*?)</text>$")
+    rect_pattern = re.compile(
+        r'^(?P<indent>\s*)<rect(?P<attrs>[^>]*)data-typing-bg="1"(?P<tail>[^>]*)data-final-opacity="(?P<final>[^"]+)"(?P<end>[^>]*)/>$'
+    )
+    cursor_pattern = re.compile(
+        r'^(?P<indent>\s*)<rect(?P<attrs>[^>]*) opacity="0\.7">.*attributeName="opacity".*</rect>$'
+    )
+    parsed = []
+    total_chars = 0
+
+    for line in body_lines:
+        if rect_pattern.match(line) or cursor_pattern.match(line):
+            parsed.append((None, line))
+            continue
+        match = pattern.match(line)
+        if not match:
+            parsed.append((None, line))
+            continue
+        attrs = match.group("attrs")
+        content = match.group("content")
+        tokens = tokenize_svg_text(content)
+        visible_chars = sum(1 for token in tokens if unescape(token))
+        total_chars += visible_chars
+        parsed.append((match, tokens))
+
+    total_chars = max(total_chars, 1)
+    step_seconds = TYPING_DURATION_SECONDS / total_chars
+    cycle_seconds = TYPING_DURATION_SECONDS + TYPING_PAUSE_SECONDS
+    char_index = 0
+    animated_lines = []
+    pending_rects = []
+
+    for item in parsed:
+        match, payload = item
+        if match is None:
+            rect_match = rect_pattern.match(payload)
+            if rect_match:
+                pending_rects.append(rect_match)
+                continue
+
+            cursor_match = cursor_pattern.match(payload)
+            if cursor_match:
+                indent = cursor_match.group("indent")
+                attrs = cursor_match.group("attrs")
+                animated_lines.append(
+                    f'{indent}<rect{attrs} opacity="0">{build_cursor_animation(TYPING_DURATION_SECONDS, cycle_seconds)}</rect>'
+                )
+                continue
+
+            animated_lines.append(payload)
+            continue
+
+        attrs = match.group("attrs")
+        indent = match.group("indent")
+        tokens = payload
+        line_start_seconds = char_index * step_seconds
+        line_start_frac = line_start_seconds / cycle_seconds
+
+        while pending_rects:
+            rect = pending_rects.pop(0)
+            rect_indent = rect.group("indent")
+            rect_attrs = rect.group("attrs")
+            rect_tail = rect.group("tail")
+            rect_end = rect.group("end")
+            final_opacity = rect.group("final")
+            rect_markup = f"{rect_attrs}{rect_tail}{rect_end}"
+            rect_markup = re.sub(r'\sdata-typing-bg="1"', "", rect_markup)
+            rect_markup = re.sub(r'\sdata-final-opacity="[^"]+"', "", rect_markup)
+            rect_markup = re.sub(r'\sopacity="[^"]+"', "", rect_markup)
+            animated_lines.append(
+                f'{rect_indent}<rect{rect_markup} opacity="0">'
+                f'<animate attributeName="opacity" values="0;0;{final_opacity};{final_opacity}" '
+                f'keyTimes="0;{line_start_frac:.6f};{line_start_frac:.6f};1" '
+                f'dur="{cycle_seconds}s" repeatCount="indefinite"/></rect>'
+            )
+
+        parts = [f'{indent}<text{attrs}>']
+        for token in tokens:
+            if not unescape(token):
+                parts.append(token)
+                continue
+            start = char_index * step_seconds
+            frac = start / cycle_seconds
+            parts.append(
+                f'<tspan opacity="0">{token}'
+                f'<animate attributeName="opacity" values="0;0;1;1" '
+                f'keyTimes="0;{frac:.6f};{frac:.6f};1" '
+                f'dur="{cycle_seconds}s" repeatCount="indefinite"/></tspan>'
+            )
+            char_index += 1
+        parts.append("</text>")
+        animated_lines.append("".join(parts))
+
+    return "\n".join(animated_lines)
 
 
 # ─────────────────────────────────────────────
@@ -371,8 +613,8 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
     L = []   # SVG lines
 
     # Background dot texture + card shell
-    L.append(box(0, 0, 680, 300, 16, f"url(#{pat})"))
-    L.append(box(12, 12, 656, 276, 14, bg_card, border, 0.75))
+    L.append(box(0, 0, SVG_WIDTH, SVG_HEIGHT, 16, f"url(#{pat})"))
+    L.append(box(12, 12, 656, 316, 14, bg_card, border, 0.75))
 
     # Header bar
     L.append(box(12, 12, 656, 44, 14, bg_out, border, 0.5))
@@ -380,7 +622,7 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
     L.append(dot(38, 34, 5.5, "#FF5F57"))
     L.append(dot(58, 34, 5.5, "#FEBC2E"))
     L.append(dot(78, 34, 5.5, "#28C840"))
-    L.append(t(340, 38, "aundreka_os — profile.sh", muted, anchor="middle"))
+    L.append(t(340, 38, "profile.sh", muted, anchor="middle"))
     L.append(dot(602, 34, 4, "#28C840", 0.9))
     L.append(t(612, 38, "online", muted))
     L.append(hline(12, 56, 668, border, 0.75))
@@ -408,60 +650,60 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
     cur_name   = current_project["name"]
     cur_labels = current_project.get("labels", [])
     cur_desc   = current_project.get("description", "")
-    cur_date   = current_project.get("pushed_at", "")[:10]
-
     L.append(t(36, y, "$", muted))
-    L.append(t(50, y, "git log --all --author-date-order -1", muted))
-    y += 16
-    L.append(t(50, y, f"currently working on: {cur_name}", pri))
-
-    tag_x_cur = 50 + (len(f"currently working on: {cur_name}") * 7) + 6
+    L.append(t(50, y, "currently working on:", muted))
     if cur_labels:
-        L.append(label_tags(tag_x_cur, y, cur_labels, dark_mode))
-
-    y += 14
+        L.append(label_tags(248, y, cur_labels, dark_mode))
+    y += 16
+    L.append(t(50, y, cur_name, pri))
+    y += 16
     if cur_desc:
-        L.append(t(50, y, cur_desc[:52], muted, size=11))
-        y += 12
+        for line in wrap_text(cur_desc, max_chars=46):
+            L.append(t(50, y, line, muted, size=11))
+            y += 12
 
     L.append(hline(36, y - 2, 400, border))
     y += 10
 
     # ── GUARANTEED PROJECT RECOMMENDATION ────
     L.append(t(36, y, "$", muted))
-    L.append(t(50, y, "today --recommend", muted))
-    y += 16
+    L.append(t(50, y, "today's recommendation:", muted))
 
-    rarity  = RARITY_LABELS.get(project.get("rarity", "common"), "")
     name    = project["name"]
     desc    = project.get("description", "")
     labels  = project.get("labels", [])
 
-    # project name + rarity
-    L.append(t(50, y, f"→ {name}{rarity}", pri))
-
-    # label tags inline after the name
-    tag_x = 50 + (len(f"→ {name}{rarity}") * 7) + 6
     if labels:
-        L.append(label_tags(tag_x, y, labels, dark_mode))
-
+        L.append(label_tags(248, y, labels, dark_mode))
     y += 16
+    L.append(t(50, y, f"→ {name}", pri))
+    y += 16
+    last_recommendation_line = f"{name}"
+    last_recommendation_y = y
     if desc:
-        L.append(t(50, y, desc[:52], muted, size=11))
-        y += 14
+        wrapped_desc = wrap_text(desc, max_chars=46)
+        for line in wrapped_desc:
+            L.append(t(50, y, line, muted, size=11))
+            last_recommendation_line = line
+            last_recommendation_y = y
+            y += 12
+    else:
+        last_recommendation_y = y - 16
 
     # Blinking cursor
+    cursor_x = 50 + len(last_recommendation_line) * 7 + 6
+    cursor_y = last_recommendation_y - 10
     L.append(
-        f'<rect x="50" y="{y}" width="8" height="12" rx="1" fill="{muted}" opacity="0.7">'
+        f'<rect x="{cursor_x}" y="{cursor_y}" width="8" height="12" rx="1" fill="{muted}" opacity="0.7">'
         f'<animate attributeName="opacity" values="0.7;0;0.7" dur="1.1s" repeatCount="indefinite"/>'
         f'</rect>'
     )
 
     # ── RIGHT PANEL ──────────────────────────
-    L.append(vline(416, 56, 276, border))
+    L.append(vline(416, 56, 328, border))
 
     ry = 74
-    L.append(t(444, ry, "pet_ai.exe", muted))
+    L.append(t(444, ry, "aundreka.exe", muted))
     ry += 10
     L.append(hline(444, ry, 644, border))
     ry += 20
@@ -493,12 +735,12 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
     L.append(t(444, ry, f"profile visits: {visits}", muted, size=11))
 
     # ── BOTTOM STRIP ─────────────────────────
-    L.append(hline(12, 260, 668, border))
-    L.append(box(36,  270, 80, 4, 2, s_green, op=0.7))
-    L.append(box(124, 270, 55, 4, 2, s_blue,  op=0.7))
-    L.append(box(187, 270, 95, 4, 2, s_purp,  op=0.7))
-    L.append(box(290, 270, 65, 4, 2, s_pink,  op=0.7))
-    L.append(t(644, 276, "v1.0", muted, anchor="end"))
+    L.append(hline(12, 302, 668, border))
+    L.append(box(36,  312, 80, 4, 2, s_green, op=0.7))
+    L.append(box(124, 312, 55, 4, 2, s_blue,  op=0.7))
+    L.append(box(187, 312, 95, 4, 2, s_purp,  op=0.7))
+    L.append(box(290, 312, 65, 4, 2, s_pink,  op=0.7))
+    L.append(t(644, 318, "v1.0", muted, anchor="end"))
 
     return "\n".join(L)
 
@@ -507,7 +749,7 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
 #  SVG ASSEMBLER
 # ─────────────────────────────────────────────
 
-DEFS = """<defs>
+DEFS = f"""<defs>
   <pattern id="dots-dark" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
     <circle cx="1" cy="1" r="1" fill="#30363d"/>
   </pattern>
@@ -521,12 +763,23 @@ def generate_svg(dark_mode: bool, project, mood, time_ctx, status,
                  dev_mode, commands, visits, streak, current_project, label: str) -> str:
     body = build_card(dark_mode, project, mood, time_ctx, status,
                       dev_mode, commands, visits, streak, current_project)
+    body_lines = body.splitlines()
+    static_lines = []
+    animated_candidates = []
+    for line in body_lines:
+        stripped = line.lstrip()
+        if stripped.startswith("<text") or 'data-typing-bg="1"' in stripped or 'attributeName="opacity"' in stripped:
+            animated_candidates.append(line)
+        else:
+            static_lines.append(line)
+    animated_text = animate_svg_lines(animated_candidates)
     return "\n".join([
-        '<svg width="680" height="300" viewBox="0 0 680 300" '
+        f'<svg width="{SVG_WIDTH}" height="{SVG_HEIGHT}" viewBox="0 0 {SVG_WIDTH} {SVG_HEIGHT}" '
         'role="img" xmlns="http://www.w3.org/2000/svg">',
-        f'  <title>Aundreka OS — {label}</title>',
+        f'  <title>Aundreka OS: {label}</title>',
         DEFS,
-        body,
+        "\n".join(static_lines),
+        animated_text,
         '</svg>',
     ])
 
@@ -544,8 +797,8 @@ def main():
                    help="Output theme (default: both — two separate files)")
     p.add_argument("--github", action="store_true",
                    help="Fetch real repos + visits from GitHub")
-    p.add_argument("--streak", type=int, default=1,
-                   help="Coding streak in days")
+    p.add_argument("--streak", type=int, default=None,
+                   help="Coding streak in days (defaults to git-derived value)")
     p.add_argument("--visits", default=None,
                    help="Profile visit count to display (overrides GitHub fetch)")
     args = p.parse_args()
@@ -560,9 +813,11 @@ def main():
     commands = pick_commands(seed)
 
     print("Aundreka OS Banner Generator")
-    print("─" * 36)
+    print("-" * 36)
     print(f"  [time]    {now.strftime('%Y-%m-%d %H:%M')} · {time_ctx['period']}")
     print(f"  [mood]    {mood}")
+
+    streak = args.streak if args.streak is not None else fetch_git_streak(now)
 
     if args.github:
         print(f"  [github]  fetching @{GITHUB_USERNAME}...")
@@ -570,13 +825,20 @@ def main():
         visits   = args.visits or fetch_github_visits(GITHUB_USERNAME)
     else:
         projects = FALLBACK_PROJECTS
-        visits   = args.visits or "—"
+        visits   = args.visits or read_cached_visit_count() or "—"
 
-    project         = pick_project(projects, args.mode, seed)
     current_project = get_current_project(projects)
+    project         = pick_project(
+        projects,
+        args.mode,
+        seed,
+        exclude_name=current_project.get("name"),
+    )
     print(f"  [project] {project['name']} ({args.mode})")
     print(f"  [working] {current_project['name']} (most recent push: {current_project.get('pushed_at','?')[:10]})")
     print(f"  [status]  {status} · mode={dev_mode}")
+    print(f"  [streak]  {streak} day(s)")
+    print(f"  [visits]  {visits}")
 
     themes = []
     if args.theme in ("dark",  "both"): themes.append((True,  "banner-dark.svg"))
@@ -586,15 +848,15 @@ def main():
         svg = generate_svg(
             dark_mode=dark_mode, project=project, mood=mood,
             time_ctx=time_ctx, status=status, dev_mode=dev_mode,
-            commands=commands, visits=visits, streak=args.streak,
+            commands=commands, visits=visits, streak=streak,
             current_project=current_project,
             label=now.strftime("%b %d"),
         )
         Path(filename).write_text(svg, encoding="utf-8")
         print(f"  [output]  {filename} ({len(svg):,} bytes)")
 
-    print("─" * 36)
-    print("Done ✓")
+    print("-" * 36)
+    print("Done")
 
 
 if __name__ == "__main__":
