@@ -1,0 +1,70 @@
+<svg width="680" height="300" viewBox="0 0 680 300" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Aundreka OS — May 01</title>
+<defs>
+  <pattern id="dots-dark" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+    <circle cx="1" cy="1" r="1" fill="#30363d"/>
+  </pattern>
+  <pattern id="dots-light" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+    <circle cx="1" cy="1" r="1" fill="#d0d7de"/>
+  </pattern>
+</defs>
+<rect x="0" y="0" width="680" height="300" rx="16" fill="url(#dots-dark)"/>
+<rect x="12" y="12" width="656" height="276" rx="14" fill="#161b22" stroke="#30363d" stroke-width="0.75"/>
+<rect x="12" y="12" width="656" height="44" rx="14" fill="#0d1117" stroke="#30363d" stroke-width="0.5"/>
+<rect x="12" y="40" width="656" height="16" rx="0" fill="#0d1117"/>
+<circle cx="38" cy="34" r="5.5" fill="#FF5F57"/>
+<circle cx="58" cy="34" r="5.5" fill="#FEBC2E"/>
+<circle cx="78" cy="34" r="5.5" fill="#28C840"/>
+<text font-family="monospace" font-size="12" font-weight="normal" x="340" y="38" text-anchor="middle" fill="#8b949e">aundreka_os — profile.sh</text>
+<circle cx="602" cy="34" r="4" fill="#28C840" opacity="0.9"/>
+<text font-family="monospace" font-size="12" font-weight="normal" x="612" y="38" text-anchor="start" fill="#8b949e">online</text>
+<line x1="12" y1="56" x2="668" y2="56" stroke="#30363d" stroke-width="0.75"/>
+<text font-family="monospace" font-size="11" font-weight="normal" x="36" y="76" text-anchor="start" fill="#8b949e">late night grind detected.</text>
+<text font-family="monospace" font-size="11" font-weight="normal" x="36" y="91" text-anchor="start" fill="#58a6ff">streak: 7 days coding</text>
+<line x1="36" y1="107" x2="400" y2="107" stroke="#30363d" stroke-width="0.5"/>
+<text font-family="monospace" font-size="12" font-weight="normal" x="36" y="121" text-anchor="start" fill="#8b949e">$</text>
+<text font-family="monospace" font-size="12" font-weight="normal" x="50" y="121" text-anchor="start" fill="#8b949e">git status</text>
+<text font-family="monospace" font-size="12" font-weight="normal" x="50" y="137" text-anchor="start" fill="#f0f6fc">nothing to commit (yet)</text>
+<line x1="36" y1="153" x2="400" y2="153" stroke="#30363d" stroke-width="0.5"/>
+<text font-family="monospace" font-size="12" font-weight="normal" x="36" y="165" text-anchor="start" fill="#8b949e">$</text>
+<text font-family="monospace" font-size="12" font-weight="normal" x="50" y="165" text-anchor="start" fill="#8b949e">git log --all --author-date-order -1</text>
+<text font-family="monospace" font-size="12" font-weight="normal" x="50" y="181" text-anchor="start" fill="#f0f6fc">currently working on: Academon</text>
+<rect x="266" y="168" width="40" height="17" rx="3" fill="#3B6D11" opacity="0.3"/>
+<text x="286" y="181" text-anchor="middle" font-family="monospace" font-size="11" fill="#7ee787">GAME</text>
+<rect x="311" y="168" width="26" height="17" rx="3" fill="#854F0B" opacity="0.3"/>
+<text x="324" y="181" text-anchor="middle" font-family="monospace" font-size="11" fill="#ffa657">AI</text>
+<rect x="342" y="168" width="33" height="17" rx="3" fill="#444441" opacity="0.3"/>
+<text x="358" y="181" text-anchor="middle" font-family="monospace" font-size="11" fill="#B4B2A9">APP</text>
+<text font-family="monospace" font-size="11" font-weight="normal" x="50" y="195" text-anchor="start" fill="#8b949e">Gacha-powered learning RPG with PvP &amp; PvE quiz comba</text>
+<line x1="36" y1="205" x2="400" y2="205" stroke="#30363d" stroke-width="0.5"/>
+<text font-family="monospace" font-size="12" font-weight="normal" x="36" y="217" text-anchor="start" fill="#8b949e">$</text>
+<text font-family="monospace" font-size="12" font-weight="normal" x="50" y="217" text-anchor="start" fill="#8b949e">today --recommend</text>
+<text font-family="monospace" font-size="12" font-weight="normal" x="50" y="233" text-anchor="start" fill="#f0f6fc">→ Academon</text>
+<rect x="126" y="220" width="40" height="17" rx="3" fill="#3B6D11" opacity="0.3"/>
+<text x="146" y="233" text-anchor="middle" font-family="monospace" font-size="11" fill="#7ee787">GAME</text>
+<rect x="171" y="220" width="26" height="17" rx="3" fill="#854F0B" opacity="0.3"/>
+<text x="184" y="233" text-anchor="middle" font-family="monospace" font-size="11" fill="#ffa657">AI</text>
+<rect x="202" y="220" width="33" height="17" rx="3" fill="#444441" opacity="0.3"/>
+<text x="218" y="233" text-anchor="middle" font-family="monospace" font-size="11" fill="#B4B2A9">APP</text>
+<text font-family="monospace" font-size="11" font-weight="normal" x="50" y="249" text-anchor="start" fill="#8b949e">Gacha-powered learning RPG with PvP &amp; PvE quiz comba</text>
+<rect x="50" y="263" width="8" height="12" rx="1" fill="#8b949e" opacity="0.7"><animate attributeName="opacity" values="0.7;0;0.7" dur="1.1s" repeatCount="indefinite"/></rect>
+<line x1="416" y1="56" x2="416" y2="276" stroke="#30363d" stroke-width="0.75"/>
+<text font-family="monospace" font-size="12" font-weight="normal" x="444" y="74" text-anchor="start" fill="#8b949e">pet_ai.exe</text>
+<line x1="444" y1="84" x2="644" y2="84" stroke="#30363d" stroke-width="0.5"/>
+<text font-family="monospace" font-size="12" font-weight="normal" x="530" y="104" text-anchor="middle" fill="#8b949e"> /\_/\ </text>
+<text font-family="monospace" font-size="12" font-weight="normal" x="530" y="122" text-anchor="middle" fill="#8b949e">=( -.- )=</text>
+<text font-family="monospace" font-size="12" font-weight="normal" x="530" y="140" text-anchor="middle" fill="#8b949e">  &gt; z &lt;  </text>
+<text font-family="monospace" font-size="11" font-weight="normal" x="530" y="162" text-anchor="middle" fill="#8b949e">mood: sleepy</text>
+<text font-family="monospace" font-size="12" font-weight="normal" x="530" y="177" text-anchor="middle" fill="#f0f6fc">one more commit...</text>
+<line x1="444" y1="197" x2="644" y2="197" stroke="#30363d" stroke-width="0.5"/>
+<text font-family="monospace" font-size="11" font-weight="normal" x="444" y="211" text-anchor="start" fill="#58a6ff">status: deploying</text>
+<text font-family="monospace" font-size="11" font-weight="normal" x="444" y="225" text-anchor="start" fill="#8b949e">mode:   experimenting</text>
+<line x1="444" y1="245" x2="644" y2="245" stroke="#30363d" stroke-width="0.5"/>
+<text font-family="monospace" font-size="11" font-weight="normal" x="444" y="259" text-anchor="start" fill="#8b949e">profile visits: —</text>
+<line x1="12" y1="260" x2="668" y2="260" stroke="#30363d" stroke-width="0.5"/>
+<rect x="36" y="270" width="80" height="4" rx="2" fill="#28C840" opacity="0.7"/>
+<rect x="124" y="270" width="55" height="4" rx="2" fill="#58a6ff" opacity="0.7"/>
+<rect x="187" y="270" width="95" height="4" rx="2" fill="#a855f7" opacity="0.7"/>
+<rect x="290" y="270" width="65" height="4" rx="2" fill="#f472b6" opacity="0.7"/>
+<text font-family="monospace" font-size="12" font-weight="normal" x="644" y="276" text-anchor="end" fill="#8b949e">v1.0</text>
+</svg>
