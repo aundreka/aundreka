@@ -256,7 +256,10 @@ def fetch_github_projects(username: str) -> list:
                 "name":        r["name"],
                 "labels":      labels,
                 "stars":       r.get("stargazers_count", 0),
-                "description": (r.get("description") or "")[:RECOMMENDATION_DESCRIPTION_FETCH_LIMIT],
+                "description": truncate_text(
+                    r.get("description") or "",
+                    RECOMMENDATION_DESCRIPTION_FETCH_LIMIT,
+                ),
                 "url":         r.get("html_url", ""),
                 "weight":      max(1, r.get("stargazers_count", 0)),
                 "rarity":      "common",
@@ -293,10 +296,18 @@ def fetch_github_visits(username: str) -> str:
 
 def parse_visit_count(svg_text: str) -> str | None:
     text_matches = re.findall(r">([^<]+)<", svg_text)
+    number_pattern = re.compile(r"([0-9][0-9,]*(?:\.[0-9]+)?[KMBT]?)", re.IGNORECASE)
+
     for text in text_matches:
         if "views" not in text.lower():
             continue
-        match = re.search(r"([0-9][0-9,]*)", text)
+        match = number_pattern.search(text)
+        if match:
+            return match.group(1)
+
+    for text in text_matches:
+        stripped = text.strip()
+        match = number_pattern.fullmatch(stripped)
         if match:
             return match.group(1)
     return None
@@ -462,6 +473,12 @@ def wrap_text(text: str, max_chars: int, max_lines: int = DEFAULT_DESCRIPTION_LI
         current = current[: max_chars - 3].rstrip() + "..."
     lines.append(current)
     return lines[:max_lines]
+
+
+def truncate_text(text: str, max_chars: int) -> str:
+    if len(text) > max_chars:
+        return text[: max_chars - 3].rstrip() + "..."
+    return text
 
 
 def tokenize_svg_text(text: str) -> list[str]:
@@ -658,7 +675,7 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
     if cur_labels:
         L.append(label_tags(248, y, cur_labels, dark_mode))
     y += 16
-    L.append(t(50, y, cur_name, pri))
+    L.append(t(50, y, f"→ {cur_name}", pri))
     y += 16
     if cur_desc:
         for line in wrap_text(cur_desc, max_chars=46):
@@ -681,7 +698,7 @@ def build_card(dark_mode, project, mood, time_ctx, status, dev_mode,
     y += 16
     L.append(t(50, y, f"→ {name}", pri))
     y += 16
-    last_recommendation_line = f"{name}"
+    last_recommendation_line = f"→ {name}"
     last_recommendation_y = y
     if desc:
         wrapped_desc = wrap_text(
@@ -826,13 +843,13 @@ def main():
 
     streak = args.streak if args.streak is not None else fetch_git_streak(now)
 
+    visits = args.visits or fetch_github_visits(GITHUB_USERNAME)
+
     if args.github:
         print(f"  [github]  fetching @{GITHUB_USERNAME}...")
         projects = fetch_github_projects(GITHUB_USERNAME)
-        visits   = args.visits or fetch_github_visits(GITHUB_USERNAME)
     else:
         projects = FALLBACK_PROJECTS
-        visits   = args.visits or read_cached_visit_count() or "—"
 
     current_project = get_current_project(projects)
     project         = pick_project(
