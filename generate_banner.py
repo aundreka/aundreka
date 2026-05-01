@@ -957,6 +957,83 @@ def generate_svg(dark_mode: bool, project, mood, time_ctx, status,
     ])
 
 
+def resolve_banner_context(
+    mode: str = "weighted",
+    github: bool = False,
+    streak_override: int | None = None,
+    visits_override: str | None = None,
+    now: datetime.datetime | None = None,
+) -> dict:
+    now = now or datetime.datetime.now(DISPLAY_TIMEZONE)
+    seed = int(now.strftime("%Y%m%d"))
+
+    time_ctx = get_time_context(now)
+    mood = pick_mood(time_ctx, seed)
+    status = random.Random(seed + 1).choice(STATUSES)
+    dev_mode = random.Random(seed + 2).choice(DEV_MODES)
+    commands = pick_commands(seed)
+    streak = streak_override if streak_override is not None else fetch_git_streak(now)
+    visits = visits_override or fetch_github_visits(GITHUB_USERNAME)
+
+    if github:
+        projects = fetch_github_projects(GITHUB_USERNAME)
+    else:
+        projects = FALLBACK_PROJECTS
+
+    current_project = get_current_project(projects)
+    project = pick_project(
+        projects,
+        mode,
+        seed,
+        exclude_name=current_project.get("name"),
+    )
+
+    return {
+        "commands": commands,
+        "current_project": current_project,
+        "dev_mode": dev_mode,
+        "mood": mood,
+        "now": now,
+        "project": project,
+        "projects": projects,
+        "status": status,
+        "streak": streak,
+        "time_ctx": time_ctx,
+        "visits": visits,
+    }
+
+
+def render_banner(
+    theme: str = "dark",
+    mode: str = "weighted",
+    github: bool = False,
+    streak_override: int | None = None,
+    visits_override: str | None = None,
+    now: datetime.datetime | None = None,
+) -> str:
+    dark_mode = theme == "dark"
+    context = resolve_banner_context(
+        mode=mode,
+        github=github,
+        streak_override=streak_override,
+        visits_override=visits_override,
+        now=now,
+    )
+    return generate_svg(
+        dark_mode=dark_mode,
+        project=context["project"],
+        mood=context["mood"],
+        time_ctx=context["time_ctx"],
+        status=context["status"],
+        dev_mode=context["dev_mode"],
+        commands=context["commands"],
+        visits=context["visits"],
+        streak=context["streak"],
+        current_project=context["current_project"],
+        label=context["now"].strftime("%b %d"),
+    )
+
+
 # ─────────────────────────────────────────────
 #  MAIN
 # ─────────────────────────────────────────────
@@ -976,37 +1053,28 @@ def main():
                    help="Profile visit count to display (overrides GitHub fetch)")
     args = p.parse_args()
 
-    now  = datetime.datetime.now(DISPLAY_TIMEZONE)
-    seed = int(now.strftime("%Y%m%d"))
-
-    time_ctx = get_time_context(now)
-    mood     = pick_mood(time_ctx, seed)
-    status   = random.Random(seed + 1).choice(STATUSES)
-    dev_mode = random.Random(seed + 2).choice(DEV_MODES)
-    commands = pick_commands(seed)
-
     print("Aundreka OS Banner Generator")
     print("-" * 36)
-    print(f"  [time]    {now.strftime('%Y-%m-%d %H:%M')} · {time_ctx['period']}")
-    print(f"  [mood]    {mood}")
-
-    streak = args.streak if args.streak is not None else fetch_git_streak(now)
-
-    visits = args.visits or fetch_github_visits(GITHUB_USERNAME)
-
     if args.github:
         print(f"  [github]  fetching @{GITHUB_USERNAME}...")
-        projects = fetch_github_projects(GITHUB_USERNAME)
-    else:
-        projects = FALLBACK_PROJECTS
-
-    current_project = get_current_project(projects)
-    project         = pick_project(
-        projects,
-        args.mode,
-        seed,
-        exclude_name=current_project.get("name"),
+    context = resolve_banner_context(
+        mode=args.mode,
+        github=args.github,
+        streak_override=args.streak,
+        visits_override=args.visits,
     )
+    now = context["now"]
+    time_ctx = context["time_ctx"]
+    mood = context["mood"]
+    status = context["status"]
+    dev_mode = context["dev_mode"]
+    streak = context["streak"]
+    visits = context["visits"]
+    project = context["project"]
+    current_project = context["current_project"]
+
+    print(f"  [time]    {now.strftime('%Y-%m-%d %H:%M')} · {time_ctx['period']}")
+    print(f"  [mood]    {mood}")
     print(f"  [project] {project['name']} ({args.mode})")
     print(f"  [working] {current_project['name']} (most recent push: {current_project.get('pushed_at','?')[:10]})")
     print(f"  [status]  {status} · mode={dev_mode}")
@@ -1018,12 +1086,13 @@ def main():
     if args.theme in ("light", "both"): themes.append((False, "banner-light.svg"))
 
     for dark_mode, filename in themes:
-        svg = generate_svg(
-            dark_mode=dark_mode, project=project, mood=mood,
-            time_ctx=time_ctx, status=status, dev_mode=dev_mode,
-            commands=commands, visits=visits, streak=streak,
-            current_project=current_project,
-            label=now.strftime("%b %d"),
+        svg = render_banner(
+            theme="dark" if dark_mode else "light",
+            mode=args.mode,
+            github=args.github,
+            streak_override=args.streak,
+            visits_override=args.visits,
+            now=now,
         )
         Path(filename).write_text(svg, encoding="utf-8")
         print(f"  [output]  {filename} ({len(svg):,} bytes)")
