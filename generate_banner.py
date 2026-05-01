@@ -12,6 +12,7 @@ import datetime
 import argparse
 import colorsys
 import json
+import os
 import re
 import subprocess
 import urllib.request
@@ -24,6 +25,7 @@ from pathlib import Path
 # ─────────────────────────────────────────────
 
 GITHUB_USERNAME = "aundreka"  
+PROFILE_VISITOR_PAGE_ID = f"{GITHUB_USERNAME}.{GITHUB_USERNAME}"
 DISPLAY_TIMEZONE = datetime.timezone(datetime.timedelta(hours=8), name="Asia/Manila")
 SVG_WIDTH = 680
 SVG_HEIGHT = 340
@@ -390,8 +392,10 @@ def fetch_github_visits(username: str) -> str:
     If the fetch fails, fall back to the last rendered banner count.
     """
     url = (
-        "https://komarev.com/ghpvc/"
-        f"?username={username}&label=PROFILE+VIEWS&color=0e75b6&style=flat-square"
+        "https://visitor-badge.laobi.icu/badge"
+        f"?page_id={PROFILE_VISITOR_PAGE_ID}"
+        "&left_color=gray&right_color=blue&left_text=Profile%20visitors"
+        f"&_ts={int(datetime.datetime.now(datetime.timezone.utc).timestamp())}"
     )
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "aundreka-banner"})
@@ -401,9 +405,11 @@ def fetch_github_visits(username: str) -> str:
         if visit_count:
             return visit_count
     except Exception as e:
-        print(f"  [visits]  fetch failed: {e} — trying cached banner value")
+        print(f"  [visits]  live badge fetch failed: {e} - trying cached banner value")
 
     cached = read_cached_visit_count()
+    if cached == "0":
+        return "—"
     return cached or "—"
 
 
@@ -436,6 +442,139 @@ def read_cached_visit_count() -> str | None:
         if match:
             return match.group(1)
     return None
+
+
+def github_api_headers(token: str | None = None) -> dict[str, str]:
+    headers = {
+        "User-Agent": "aundreka-banner",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2026-03-10",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def compute_streak_from_dates(active_dates: set[datetime.date], today: datetime.date) -> int:
+    if not active_dates:
+        return 0
+
+    if today in active_dates:
+        current = today
+    elif today - datetime.timedelta(days=1) in active_dates:
+        current = today - datetime.timedelta(days=1)
+    else:
+        return 0
+
+    streak = 0
+    while current in active_dates:
+        streak += 1
+        current -= datetime.timedelta(days=1)
+    return streak
+
+
+def fetch_github_contribution_streak(username: str, now: datetime.datetime, token: str) -> int | None:
+    since = (now.date() - datetime.timedelta(days=365)).isoformat()
+    until = now.date().isoformat()
+    query = """
+    query($username: String!, $from: DateTime!, $to: DateTime!) {
+      user(login: $username) {
+        contributionsCollection(from: $from, to: $to) {
+          contributionCalendar {
+            weeks {
+              contributionDays {
+                date
+                contributionCount
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    payload = json.dumps(
+        {
+            "query": query,
+            "variables": {
+                "username": username,
+                "from": f"{since}T00:00:00Z",
+                "to": f"{until}T23:59:59Z",
+            },
+        }
+    ).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/graphql",
+            data=payload,
+            headers={**github_api_headers(token), "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = json.loads(resp.read())
+    except Exception as e:
+        print(f"  [streak]  GitHub contributions fetch failed: {e} - trying public events")
+        return None
+
+    if body.get("errors"):
+        print("  [streak]  GitHub contributions returned errors - trying public events")
+        return None
+
+    user = (body.get("data") or {}).get("user") or {}
+    collection = user.get("contributionsCollection") or {}
+    weeks = ((collection.get("contributionCalendar") or {}).get("weeks") or [])
+    active_dates = set()
+    for week in weeks:
+        for day in week.get("contributionDays", []):
+            if (day.get("contributionCount") or 0) > 0:
+                try:
+                    active_dates.add(datetime.date.fromisoformat(day["date"]))
+                except Exception:
+                    continue
+
+    return compute_streak_from_dates(active_dates, now.date())
+
+
+def fetch_github_public_events_streak(username: str, now: datetime.datetime) -> int | None:
+    active_dates = set()
+    for page in range(1, 4):
+        url = f"https://api.github.com/users/{username}/events/public?per_page=100&page={page}"
+        try:
+            req = urllib.request.Request(url, headers=github_api_headers())
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                events = json.loads(resp.read())
+        except Exception as e:
+            print(f"  [streak]  GitHub public events fetch failed: {e} - trying local git")
+            return None
+
+        if not events:
+            break
+
+        for event in events:
+            created_at = event.get("created_at")
+            if not created_at:
+                continue
+            try:
+                dt = datetime.datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                active_dates.add(dt.astimezone(DISPLAY_TIMEZONE).date())
+            except ValueError:
+                continue
+
+    return compute_streak_from_dates(active_dates, now.date())
+
+
+def fetch_real_activity_streak(now: datetime.datetime, username: str = GITHUB_USERNAME) -> int:
+    token = os.getenv("GITHUB_TOKEN")
+    if token:
+        streak = fetch_github_contribution_streak(username, now, token)
+        if streak is not None:
+            return streak
+
+    streak = fetch_github_public_events_streak(username, now)
+    if streak is not None:
+        return streak
+
+    return fetch_git_streak(now)
 
 
 def fetch_git_streak(now: datetime.datetime) -> int:
@@ -972,7 +1111,7 @@ def resolve_banner_context(
     status = random.Random(seed + 1).choice(STATUSES)
     dev_mode = random.Random(seed + 2).choice(DEV_MODES)
     commands = pick_commands(seed)
-    streak = streak_override if streak_override is not None else fetch_git_streak(now)
+    streak = streak_override if streak_override is not None else fetch_real_activity_streak(now)
     visits = visits_override or fetch_github_visits(GITHUB_USERNAME)
 
     if github:
